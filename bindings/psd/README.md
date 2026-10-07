@@ -125,6 +125,27 @@ The float buffer owns its storage independently of the document; `len` counts fl
 
 See `examples/inspect.cpp` and `examples/create.cpp` for ownership and creation.
 
+## C#
+
+`PhotoCraft.Psd` targets .NET 10 with no external managed dependencies. CI packs a NuGet artifact with native libraries for `linux-x64`, `linux-arm64`, `win-x64`, `win-arm64` and `osx-arm64`. NuGet selects the native library automatically. Linux libraries use the build runner's glibc; the Python wheels' `manylinux_2_28` baseline does not apply to them.
+
+```csharp
+using PhotoCraft.Psd;
+using var doc = Document.Parse(File.ReadAllBytes("input.psd"), lazy: true);
+var header = doc.Header;
+var pixels = doc.DecodeMerged();
+var preview = doc.Preview(256);
+File.WriteAllBytes("output.psd", doc.ToBytes());
+```
+
+`Document` exposes headers, layer names/bounds, channel IDs/bounds, native pixels, colour-mode data, ICC profiles, raw resources, RGBA8 previews and serialization. `Info` reports compression, merged alpha (0/1) and real-composite availability (-1 unknown, 0 false, 1 true). `Builder` supports layers, masks, groups, composites, resources, ICC profiles and DPI with the creation rules above. `Bounds` uses top/left/bottom/right. Outputs are independent managed arrays; keep input arrays unchanged during calls. Use `using` for documents and builders. Safe handles protect native lifetimes, document reads can run concurrently, and builder calls are serialized. Native failures raise `ArgumentException` or `InvalidDataException`; disposed objects raise `ObjectDisposedException`.
+
+See `examples/csharp/` for inspect/create consumers. `sh check-dotnet.sh <RID>` packs and tests the NuGet artifact for your host RID.
+
+`MergedPixelsF32` / `LayerPixelsF32` return `FloatImage` with owned `float[]` data. `EditLayer` / `ReplaceChannel` return independent documents. `Resolution` and `ThumbnailInfo` are nullable; `ThumbnailData()` returns the payload. `ChannelCompression` is nullable for an empty channel without a tag. Null edit fields keep their values; an empty name clears it.
+
+`LayerProperties`, `LayerMask` and `LayerTree` expose visibility, blend keys, opacity/fill opacity, clipping, IDs, raster masks and group relationships. `LayerMask` returns `null` when absent; mask `Parameters` uses the C presence bits (1: user density, 2: user feather, 4: vector density, 8: vector feather). `HasReal` marks real-mask fields. Tree parent/divider indices are nullable.
+
 ## Graphics frameworks
 
 Previews provide packed sRGB RGBA8, straight alpha and `width * 4` bytes per row. Copy pixels into framework-owned storage, or retain the C/C++ buffer owner until the framework releases it. Never let a framework free Rust storage with its allocator. Reject empty previews before constructing textures/surfaces. Preserve sRGB colour metadata where supported.

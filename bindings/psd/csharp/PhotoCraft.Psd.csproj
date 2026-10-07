@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>PhotoCraft.Psd</PackageId>
+    <Version>$(PsdVersion)</Version>
+    <Description>PSD/PSB parsing, native-depth decoding, previews and layered creation.</Description>
+    <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/storytold/photocraft</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../LICENSE-*" Pack="true" PackagePath="/" />
+    <NativeAsset Include="$(NativeRoot)/**/libphotocraft_psd_bindings.so;$(NativeRoot)/**/libphotocraft_psd_bindings.dylib;$(NativeRoot)/**/photocraft_psd_bindings.dll" Condition="'$(NativeRoot)' != ''" />
+    <None Include="@(NativeAsset)" Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Target Name="RequireNativeAssets" BeforeTargets="GenerateNuspec">
+    <Error Condition="'$(PsdVersion)' == ''" Text="Set PsdVersion to the binding package version." />
+    <Error Condition="'@(NativeAsset)' == ''" Text="Set NativeRoot to the directory containing RID/native libraries." />
+  </Target>
+</Project>
