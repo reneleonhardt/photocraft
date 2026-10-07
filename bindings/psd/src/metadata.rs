@@ -3,6 +3,7 @@ macro_rules! metadata {
     ($(#[$attr:meta])* $name:ident { $($field:ident: $ty:ty),* $(,)? }) => {
         $(#[$attr])*
         #[derive(Clone, Debug, Default, PartialEq)]
+        #[cfg_attr(all(feature = "python", not(target_arch = "wasm32")), derive(pyo3::IntoPyObject))]
         pub struct $name { $(pub $field: $ty),* }
     };
 }

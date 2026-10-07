@@ -75,3 +75,37 @@ pc_psd_float_buffer_free(&pixels.data);
 
 The float buffer owns its storage independently of the document; `len` counts floats. Use the embedded ICC profile with the source colour mode when converting to a working space.
 
+## Python
+
+Python `FloatImage.data` is an owned, read-only native-endian `memoryview` with format `f`. Use `numpy.frombuffer(data, dtype=numpy.float32)` for a NumPy view; NumPy is optional. The buffer survives its document/image. Encoding, supported modes and limits match the C float API above.
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install maturin==1.15.0
+.venv/bin/python -m maturin build --release --features python --locked \
+  --interpreter "$PWD/.venv/bin/python" --out target/wheels
+.venv/bin/python -m pip install --no-index --find-links target/wheels --no-deps photocraft-psd
+.venv/bin/python examples/inspect.py input.psd output.psd
+```
+
+Import `Psd` from `photocraft_psd` and construct it with file bytes. Python manages its immutable lifetime; parsing and lookup failures raise `ValueError`. Long Rust operations detach from the interpreter. The module declares `gil_used = false` for free-threaded execution.
+
+CI builds C libraries and Python wheels natively for Linux/Windows x86_64 and ARM64, and macOS ARM64. Linux wheels target `manylinux_2_28` (glibc 2.28+). Wheels use cibuildwheel, platform repairs, and strict ABI audits:
+
+| Build | Wheel tags | Consumers |
+| --- | --- | --- |
+| Python 3.11 | `cp311-abi3` | Regular 3.11+ |
+| Python 3.14t | `cp314-cp314t` | Free-threaded 3.14 |
+| Python 3.15t | `cp315-abi3.abi3t` | Regular and free-threaded 3.15+ |
+
+PyO3 selects the ABI from the interpreter; `abi3t` starts at 3.15. cibuildwheel selects free-threaded builds by their `t` suffix; no environment override is needed. Consumer jobs test stable regular 3.11–3.15 and free-threaded 3.14/3.15.
+
+Run wheel builds from the **repository root** so Linux containers receive the PSD and CMS path dependencies:
+
+```sh
+python -m pip install 'cibuildwheel[uv]==4.3.1'
+python -m cibuildwheel bindings/psd --output-dir bindings/psd/target/wheels-release
+```
+
+Linux requires Docker. macOS cibuildwheel uses python.org interpreters; direct maturin builds accept other compatible interpreters.
+

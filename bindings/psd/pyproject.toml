@@ -1,0 +1,38 @@
+[build-system]
+requires = ["maturin==1.15.0"]
+build-backend = "maturin"
+
+[project]
+name = "photocraft-psd"
+dynamic = ["version"]
+description = "Lossless PSD/PSB parsing, metadata and native-depth decoding"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+
+[tool.maturin]
+bindings = "pyo3"
+features = ["python"]
+module-name = "photocraft_psd"
+profile = "release"
+locked = true
+strip = true
+use-base-python = true
+
+[tool.cibuildwheel]
+archs = ["native"]
+build = ["cp311-*", "cp314t-*", "cp315t-*"]
+skip = ["*-musllinux_*"]
+build-frontend = "uv"
+dependency-versions = "latest"
+test-command = 'python -c "import photocraft_psd, sys, sysconfig; assert not sysconfig.get_config_var(\"Py_GIL_DISABLED\") or not sys._is_gil_enabled()"'
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+container-engine = { name = "docker", disable-host-mount = true }
+before-all = "curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable"
+environment = { PATH = "$HOME/.cargo/bin:$PATH" }
+
+[tool.cibuildwheel.macos]
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
