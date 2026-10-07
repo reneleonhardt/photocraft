@@ -17,6 +17,8 @@ pub struct BuilderConfig {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(all(feature = "javascript", target_arch = "wasm32"), derive(serde::Serialize, serde::Deserialize, tsify::Tsify))]
+#[cfg_attr(all(feature = "javascript", target_arch = "wasm32"), serde(default, rename_all = "camelCase"))]
 pub struct LayerOptions {
     pub blend_mode: [u8; 4],
     pub opacity: u8,

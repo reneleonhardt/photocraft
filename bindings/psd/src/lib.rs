@@ -20,3 +20,5 @@ pub use pixels::FloatImage;
 pub mod c;
 #[cfg(all(feature = "python", not(target_arch = "wasm32")))]
 mod python;
+#[cfg(all(feature = "javascript", target_arch = "wasm32"))]
+mod wasm;

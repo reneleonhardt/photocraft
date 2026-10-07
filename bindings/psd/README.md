@@ -14,6 +14,39 @@ Composites and layer channels support raw, PackBits RLE, ZIP and ZIP with predic
 
 Parsing validates decodable saved composites by default. Composites above decoder limits remain stored without inflation; decoding them returns a size-limit error. For metadata or immediate pixel decoding, use `pc_psd_parse_lazy`, Python `Psd(bytes, lazy=True)`, or JavaScript `new Psd(bytes, true)` to defer that work. Pixel decoding checks sizes and ZIP checksums in one pass; lazy parsing can retain corrupt composites until decoding.
 
+| Python / JavaScript | Result |
+| --- | --- |
+| `header_info()` / `headerInfo()` | Header, compression, merged alpha, real-composite flag |
+| `layer_metadata(i)` / `layerMetadata(i)` | Name, bounds, channels, blend key, opacity/fill opacity (0–255), clipping, visibility, ID, section type, mask |
+| `layer_tree()` / `layerTree()` | Preorder nodes with layer index, parent, divider, group flag |
+| `resolution()` | Horizontal/vertical resolution and units |
+| `resource_path(i)` / `resourcePath(i)` | Owned saved-path geometry for resource 1025 or 2000–2997; other resources return no path |
+| `vector_mask(i)` / `vectorMask(i)` | Owned layer vector-mask geometry, version and flags |
+| `slices()` | Owned slice collection: group name, rectangles, layer IDs and text fields |
+| `color_mode_data()` / `colorModeData()` | Raw colour data, including indexed palettes |
+| `resource(id)` | Resource bytes, e.g. XMP 1060, EXIF 1058, thumbnail 1036 |
+| `resource_count()` / `resourceCount()` | Number of resources in file order |
+| `resource_info(i)` / `resourceInfo(i)` | ID, signature, name/payload lengths; `resource_name(i)` / `resourceName(i)` and `resource_data(i)` / `resourceData(i)` return raw bytes |
+| `layer_block_count(i)` / `layerBlockCount(i)` | Layer block count; `layer_block_info(i, j)` / `layerBlockInfo(i, j)` and `layer_block_data(i, j)` / `layerBlockData(i, j)` read each block |
+| `global_block_count()` / `globalBlockCount()` | Global block count; `global_block_info(i)` / `globalBlockInfo(i)` and `global_block_data(i)` / `globalBlockData(i)` read each block |
+| `thumbnail_info()` / `thumbnailInfo()` | Format (0: padded RGB24, 1: JPEG), dimensions, row bytes, legacy BGR flag; `thumbnail_data()` / `thumbnailData()` returns the image payload |
+| `preview(max_edge)` / `preview(maxEdge)` | Sized sRGB preview: Python `(width, height, bytes)`; JavaScript `Preview` with `width`, `height`, `data`, and `free()` |
+| `layer_preview(i, max_edge)` / `layerPreview(i, maxEdge)` | Sized layer thumbnail with the same result type; empty layers return 0 × 0 |
+| `merged_rgba8()` / `mergedRgba8()` | Saved composite as interleaved RGBA8 |
+| `layer_rgba8(i)` / `layerRgba8(i)` | RGBA8 layer at its own bounds |
+| `merged_pixels_f32()` / `mergedPixelsF32()` | Source-space float image: width, height, colour mode, channels and owned data |
+| `layer_pixels_f32(i)` / `layerPixelsF32(i)` | Float layer pixels at its own bounds |
+| `edit_layer(i, name=..., visible=...)` / `editLayer(i, name?, visible?)` | Independent document with a renamed layer or changed visibility |
+| `replace_channel(i, id, bytes)` / `replaceChannel(i, id, bytes)` | Independent document with an existing channel replaced at unchanged bounds |
+
+Python metadata uses dictionaries with snake_case keys; JavaScript uses typed objects with camelCase keys. Missing metadata is `None` / `null`; geometry handles use `None` / `undefined`; JavaScript resource, thumbnail-payload and channel-compression results use `undefined`. Missing ICC profiles return empty bytes. Blend keys retain their raw four bytes alongside a UTF-8 string with replacement characters. Masks include bounds, flags, density/feather parameters, and real-mask fields.
+
+Paths expose `info()`, `subpath_info(i)` / `subpathInfo(i)` and `knot(subpath, i)`. Knot coordinates are x/y fractions of canvas width/height; flags and subpath operations retain PSD codes. Typed paths reject partial records and allocations above 256 MiB; raw bytes remain available.
+
+Slices expose `info()`, `group_name()` / `groupName()`, `slice_info(i)` / `sliceInfo(i)` and `text(i, field)`. Text fields are `name`, `url`, `target`, `message`, `alt` and `cell_text`. Slice rectangles are `[left, top, right, bottom]`; collection bounds/outsets use `[top, left, bottom, right]`. Colours are `[alpha, red, green, blue]`.
+
+Tree parents/dividers are layer-record indices. Nesting beyond 256 levels returns an error. C structures, presence flags, and sentinels are defined in the header.
+
 RGBA8 previews convert embedded ICC profiles to sRGB before reducing precision. RGB, grayscale, bitmap, indexed and Lab are supported; CMYK requires an embedded profile. Indexed previews and float pixels honor the transparent palette index. Invalid, mismatched or unsupported profiles return errors. Without a profile, integer RGB/Gray assume sRGB/sGray, float RGB/Gray assume linear sRGB, and Lab assumes D50. Duotone and multichannel previews are unsupported.
 
 Use RGBA8 for thumbnails and SDR display. Editing, HDR, wide-gamut work and high-quality export need native-depth samples and ICC data. Preview output is clipped to 0–1 after colour conversion; there is no HDR tone mapping. Layer previews include transparency, but do not apply masks, effects, opacity, fill opacity or blending; they extract pixels rather than render layer appearance. A document marked as having no real saved composite returns a composite preview error; individual layers remain available.
@@ -108,4 +141,22 @@ python -m cibuildwheel bindings/psd --output-dir bindings/psd/target/wheels-rele
 ```
 
 Linux requires Docker. macOS cibuildwheel uses python.org interpreters; direct maturin builds accept other compatible interpreters.
+
+## JavaScript and TypeScript
+
+JavaScript `FloatImage.data` returns an owned `Float32Array` that survives its document/image and WASM memory growth. Release the image with `free()`. Encoding, supported modes and limits match the C float API above.
+
+ES2022 is the baseline for Node.js 22+ and modern browsers with WebAssembly SIMD128, BigInt, and `TextEncoder`/`TextDecoder`. The browser loader needs `fetch` and `URL`. `--target web` selects an ESM loader, not an ES version.
+
+```sh
+rustup target add wasm32-unknown-unknown
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C target-feature=+simd128"
+wasm-pack build --release --target nodejs --out-dir pkg-node --out-name photocraft_psd -- --features javascript --locked
+node examples/inspect.mjs input.psd output.psd
+wasm-pack build --release --target web --out-dir pkg --out-name photocraft_psd -- --features javascript --locked
+```
+
+See `examples/inspect.ts` for browser initialization and typed metadata. Include `ESNext.Disposable` in TypeScript's `lib` for generated declarations; the runtime disposal hook is optional. Call `free()` once when finished, then discard the object. Returned arrays stay valid. Bounds are `Int32Array`; byte data is `Uint8Array`; failures throw `Error`. Indices must be unsigned 32-bit integers; channel IDs must be signed 16-bit integers.
+
+Decoding is synchronous. For large files, use `examples/worker.ts` with module workers. Compile to `worker/worker.js`, keep the generated web package in sibling `pkg/`, and serve both over HTTP. Send `{ bytes }` with `[bytes]` as the transfer list; the sender's buffer detaches. The worker transfers the preview back and permits retry after initialization failure.
 

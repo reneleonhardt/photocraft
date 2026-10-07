@@ -4,6 +4,9 @@ macro_rules! metadata {
         $(#[$attr])*
         #[derive(Clone, Debug, Default, PartialEq)]
         #[cfg_attr(all(feature = "python", not(target_arch = "wasm32")), derive(pyo3::IntoPyObject))]
+        #[cfg_attr(all(feature = "javascript", target_arch = "wasm32"), derive(serde::Serialize, tsify::Tsify))]
+        #[cfg_attr(all(feature = "javascript", target_arch = "wasm32"), serde(rename_all = "camelCase"))]
+        #[cfg_attr(all(feature = "javascript", target_arch = "wasm32"), tsify(missing_as_null))]
         pub struct $name { $(pub $field: $ty),* }
     };
 }

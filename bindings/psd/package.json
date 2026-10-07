@@ -1,0 +1,11 @@
+{
+  "name": "photocraft-psd-consumer-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "check:worker": "tsc -p tsconfig.worker.json --noEmit false --outDir target/worker && node tests/worker.mjs target/fixture.psd",
+    "check:browser": "playwright test -c tests/playwright.config.mjs"
+  },
+  "devDependencies": { "@playwright/test": "~1.64.0", "typescript": "~7.0.2" }
+}
