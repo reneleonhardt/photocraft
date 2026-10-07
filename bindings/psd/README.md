@@ -146,6 +146,26 @@ See `examples/csharp/` for inspect/create consumers. `sh check-dotnet.sh <RID>` 
 
 `LayerProperties`, `LayerMask` and `LayerTree` expose visibility, blend keys, opacity/fill opacity, clipping, IDs, raster masks and group relationships. `LayerMask` returns `null` when absent; mask `Parameters` uses the C presence bits (1: user density, 2: user feather, 4: vector density, 8: vector feather). `HasReal` marks real-mask fields. Tree parent/divider indices are nullable.
 
+## Go
+
+`github.com/storytold/photocraft/bindings/psd/go` uses cgo and the C library, with no Go dependencies. The module includes the canonical C header. Use Go 1.27+ and a matching C compiler; Windows needs MinGW Clang/GCC, including an ARM64 toolchain on Windows ARM64.
+
+```sh
+sh package-c.sh
+export CGO_ENABLED=1
+export CGO_LDFLAGS="-L$PWD/target/native-sdk/lib -Wl,-rpath,$PWD/target/native-sdk/lib"
+go run ./examples/go/inspect input.psd output.psd preview.png
+go run ./examples/go/create created.psd
+```
+
+These commands target Linux/macOS. Windows consumers add the SDK's `bin/` to `PATH` and `CGO_LDFLAGS="-L<SDK>/bin"`, and set `CC` to their MinGW compiler. CI uses MSYS2 Clang for both Windows architectures. Native Linux libraries require the build runner's glibc.
+
+`Parse(bytes, lazy)` returns a document with `Header`, `Layer`, `ChannelID`, native decoding, colour-mode data, ICC/resources, serialization and sized previews. `Preview` and `LayerPreview` return owned `*image.NRGBA` images for `image/draw`, PNG encoding and Go graphics libraries. `NewBuilder(DefaultConfig(width, height))` supports the creation operations above; `AddLayer` takes `image.Rectangle` bounds and optional `LayerOptions` and mask bytes. Preserve input slices during calls. Read-only calls can run concurrently; builder calls and `Close` are serialized. Close handles promptly; automatic cleanup is a fallback. Closed or zero-value handles return `ErrClosed`; copied wrappers share the same lifetime.
+
+`Info`, `ChannelBounds`, `ChannelCompression`, `Resolution` and `ThumbnailInfo` expose typed inspection data; absent metadata/compression returns `nil`. `ThumbnailData` returns the payload. `MergedPixelsF32` / `LayerPixelsF32` return owned `[]float32` data. `EditLayer(layer, name, visible)` takes optional pointers; `ReplaceChannel` takes native sample bytes. Both return independent documents; a non-nil empty name clears it.
+
+Go exposes `LayerProperties`, `LayerMask` and `LayerTree`. Missing masks return `nil`; mask `Parameters` and `HasReal` follow the C presence flags. Tree parent/divider indices use `-1` when absent. Returned values own their data.
+
 ## Graphics frameworks
 
 Previews provide packed sRGB RGBA8, straight alpha and `width * 4` bytes per row. Copy pixels into framework-owned storage, or retain the C/C++ buffer owner until the framework releases it. Never let a framework free Rust storage with its allocator. Reject empty previews before constructing textures/surfaces. Preserve sRGB colour metadata where supported.
@@ -157,6 +177,7 @@ Previews provide packed sRGB RGBA8, straight alpha and `width * 4` bytes per row
 | [Skia](https://api.skia.org/namespaceSkImages.html) | `SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType, SkColorSpace::MakeSRGB())`; `SkImages::RasterFromPixmapCopy` takes an independent copy. |
 | [SDL3](https://wiki.libsdl.org/SDL3/SDL_CreateSurfaceFrom) | `SDL_PIXELFORMAT_RGBA32`; `SDL_CreateSurfaceFrom` borrows bytes. Keep their owner alive through surface destruction or copy into an owned surface. |
 | [Cairo](https://cairographics.org/manual/cairo-Image-Surfaces.html) | `CAIRO_FORMAT_ARGB32` requires native-endian, premultiplied ARGB. Convert RGBA before wrapping; retain the converted buffer through surface destruction and validate Cairo's stride/status. |
+| Go | `Preview` returns `image.NRGBA` directly; `image/draw` converts to premultiplied `image.RGBA` when needed. |
 
 For Cairo, widen components to `uint32_t`; each destination word is `(a << 24) | (premultiply(r) << 16) | (premultiply(g) << 8) | premultiply(b)`, with `premultiply(c) = (c * a + 127) / 255`; store the word in native byte order. Transparent pixels become zero. Native-depth editing still requires decoded samples and the ICC profile; these display recipes quantize to RGBA8.
 
