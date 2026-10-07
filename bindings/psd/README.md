@@ -166,6 +166,23 @@ These commands target Linux/macOS. Windows consumers add the SDK's `bin/` to `PA
 
 Go exposes `LayerProperties`, `LayerMask` and `LayerTree`. Missing masks return `nil`; mask `Parameters` and `HasReal` follow the C presence flags. Tree parent/divider indices use `-1` when absent. Returned values own their data.
 
+## Dart
+
+[`dart/`](dart/README.md) is a Dart 3.13+ FFI package with the official `ffi` allocator dependency. It provides native-depth pixels, resources, previews and creation. Close handles promptly; automatic cleanup is a fallback. Worker isolates open their own library and handles.
+
+```sh
+sh package-c.sh
+cd dart
+dart pub get
+dart run example/inspect.dart ../target/native-sdk/lib/libphotocraft_psd_bindings.dylib input.psd output.psd
+```
+
+Use the SDK's `.so` on Linux or `bin/photocraft_psd_bindings.dll` on Windows. CI checks JIT and compiled consumers on all five native targets. Dart web uses the JavaScript/WASM package.
+
+`info`, `channelBounds`, `channelCompression`, `resolution` and `thumbnailInfo` expose typed inspection data; absent metadata/compression returns `null`. `thumbnailData()` returns the payload. `mergedPixelsF32()` / `layerPixelsF32()` return owned `Float32List` data. `editLayer` / `replaceChannel` return independent documents; null edit fields keep their values and an empty name clears it.
+
+`layerProperties`, `layerMask` and `layerTree` expose the same layer decisions in Dart. Missing masks, mask parameters, real-mask fields and tree parent/divider indices are nullable; returned records and lists own their data.
+
 ## Graphics frameworks
 
 Previews provide packed sRGB RGBA8, straight alpha and `width * 4` bytes per row. Copy pixels into framework-owned storage, or retain the C/C++ buffer owner until the framework releases it. Never let a framework free Rust storage with its allocator. Reject empty previews before constructing textures/surfaces. Preserve sRGB colour metadata where supported.
@@ -178,6 +195,7 @@ Previews provide packed sRGB RGBA8, straight alpha and `width * 4` bytes per row
 | [SDL3](https://wiki.libsdl.org/SDL3/SDL_CreateSurfaceFrom) | `SDL_PIXELFORMAT_RGBA32`; `SDL_CreateSurfaceFrom` borrows bytes. Keep their owner alive through surface destruction or copy into an owned surface. |
 | [Cairo](https://cairographics.org/manual/cairo-Image-Surfaces.html) | `CAIRO_FORMAT_ARGB32` requires native-endian, premultiplied ARGB. Convert RGBA before wrapping; retain the converted buffer through surface destruction and validate Cairo's stride/status. |
 | Go | `Preview` returns `image.NRGBA` directly; `image/draw` converts to premultiplied `image.RGBA` when needed. |
+| [Flutter](https://api.flutter.dev/flutter/dart-ui/decodeImageFromPixels.html) | `preview.premultipliedRgba8()` returns an owned RGBA8 copy for `PixelFormat.rgba8888`, stride `width * 4`. |
 
 For Cairo, widen components to `uint32_t`; each destination word is `(a << 24) | (premultiply(r) << 16) | (premultiply(g) << 8) | premultiply(b)`, with `premultiply(c) = (c * a + 127) / 255`; store the word in native byte order. Transparent pixels become zero. Native-depth editing still requires decoded samples and the ICC profile; these display recipes quantize to RGBA8.
 

@@ -1,0 +1,8 @@
+name: photocraft_psd
+version: 0.3.0
+description: Native-depth PSD/PSB reading, writing and colour-managed previews over PhotoCraft's C ABI.
+repository: https://github.com/storytold/photocraft
+environment:
+  sdk: ^3.13.0
+dependencies:
+  ffi: ^2.2.0
