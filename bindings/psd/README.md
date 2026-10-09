@@ -89,6 +89,15 @@ copy target\c\release\photocraft_psd_bindings.dll target\
 target\inspect-c.exe input.psd output.psd
 ```
 
+`sh package-c.sh` builds a relocatable SDK in `target/native-sdk` with headers, shared/static libraries, licenses, CMake targets and pkg-config metadata. Set `CMAKE_PREFIX_PATH` to the SDK and use:
+
+```cmake
+find_package(PhotoCraftPsd CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE PhotoCraftPsd::Psd)
+```
+
+Use `PhotoCraftPsd::PsdStatic` for static linking; it includes Rust's native linker requirements. Deploy shared libraries beside your application or configure their runtime search path. Windows DLLs live in `bin/`, import/static libraries in `lib/`. On Unix, set `PKG_CONFIG_PATH` to the SDK's `lib/pkgconfig` and use `pkg-config --cflags --libs photocraft-psd`. The included Clang module map allows Swift to `import PhotoCraftPsd` with the SDK include/library paths.
+
 For static linking, obtain native flags with `cargo rustc --release --features c --locked --target-dir target/c -- --print native-static-libs`.
 
 Follow the header's pointer contract. Fallible calls return a status, reset valid outputs on failure, and optionally fill a UTF-8 error buffer. Free documents with `pc_psd_free`, byte buffers with `pc_psd_buffer_free`, trees with `pc_psd_tree_free`, and builder/path/slice handles with their matching `*_free` function. Release storage before reusing an output; use these functions for Rust allocations. Read-only calls can share a live document with separate outputs.
@@ -107,6 +116,28 @@ pc_psd_float_buffer_free(&pixels.data);
 ```
 
 The float buffer owns its storage independently of the document; `len` counts floats. Use the embedded ICC profile with the source colour mode when converting to a working space.
+
+## C++
+
+`include/photocraft_psd.hpp` is a header-only C++17 adapter. Link the C library using the SDK targets above.
+
+`photocraft::psd::parse`, `builder`, `build`, `edit_layer` and `replace_channel` return move-only owners. `bytes(function, args...)` owns byte outputs; `call<T>(function, args...)` returns plain C values. `check(status, error)` throws `std::runtime_error` on failure. All C functions remain available. Use `Buffer`, `Tree`, `Preview` and `FloatImage` with `put()` for output storage and `get()` for access; `put()` releases the previous allocation. `Path` and `Slices` own their handles. The C pointer and concurrency contracts still apply.
+
+See `examples/inspect.cpp` and `examples/create.cpp` for ownership and creation.
+
+## Graphics frameworks
+
+Previews provide packed sRGB RGBA8, straight alpha and `width * 4` bytes per row. Copy pixels into framework-owned storage, or retain the C/C++ buffer owner until the framework releases it. Never let a framework free Rust storage with its allocator. Reject empty previews before constructing textures/surfaces. Preserve sRGB colour metadata where supported.
+
+| Consumer | Pixel format and ownership |
+| --- | --- |
+| [Qt 5/6](https://doc.qt.io/qt-6/qimage.html) | `QImage::Format_RGBA8888`; construct from preview bytes and call `copy()` for independent ownership. Set `QColorSpace::SRgb` (Qt 5.14+). |
+| [GTK 4](https://docs.gtk.org/gdk4/ctor.MemoryTexture.new.html) | `GdkMemoryTexture`, `GDK_MEMORY_R8G8B8A8`, stride `width * 4`; `g_bytes_new` copies bytes, then the texture retains the `GBytes`. |
+| [Skia](https://api.skia.org/namespaceSkImages.html) | `SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType, SkColorSpace::MakeSRGB())`; `SkImages::RasterFromPixmapCopy` takes an independent copy. |
+| [SDL3](https://wiki.libsdl.org/SDL3/SDL_CreateSurfaceFrom) | `SDL_PIXELFORMAT_RGBA32`; `SDL_CreateSurfaceFrom` borrows bytes. Keep their owner alive through surface destruction or copy into an owned surface. |
+| [Cairo](https://cairographics.org/manual/cairo-Image-Surfaces.html) | `CAIRO_FORMAT_ARGB32` requires native-endian, premultiplied ARGB. Convert RGBA before wrapping; retain the converted buffer through surface destruction and validate Cairo's stride/status. |
+
+For Cairo, widen components to `uint32_t`; each destination word is `(a << 24) | (premultiply(r) << 16) | (premultiply(g) << 8) | premultiply(b)`, with `premultiply(c) = (c * a + 127) / 255`; store the word in native byte order. Transparent pixels become zero. Native-depth editing still requires decoded samples and the ICC profile; these display recipes quantize to RGBA8.
 
 ## Python
 

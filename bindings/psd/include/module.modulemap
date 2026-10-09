@@ -1,0 +1,5 @@
+module PhotoCraftPsd {
+  header "photocraft_psd.h"
+  link "photocraft_psd_bindings"
+  export *
+}
