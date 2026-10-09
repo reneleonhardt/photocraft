@@ -46,10 +46,12 @@ impl ImageData {
         all.get(index * plane..(index + 1) * plane).map(<[u8]>::to_vec).ok_or_else(|| crate::error::PsdError::invalid(format!("no merged channel {index}")))
     }
 
-    pub(crate) fn read(r: &mut Reader<'_>, header: &Header) -> Result<Self> {
+    pub(crate) fn read(r: &mut Reader<'_>, header: &Header, validate: bool) -> Result<Self> {
         let compression = Compression::from_u16(r.u16()?);
         let data = r.peek_rest();
-        validate_planes(compression, data, &Self::layout(header))?;
+        if validate {
+            validate_planes(compression, data, &Self::layout(header))?;
+        }
         let data = data.to_vec();
         r.skip(data.len())?;
         Ok(ImageData { compression, data })

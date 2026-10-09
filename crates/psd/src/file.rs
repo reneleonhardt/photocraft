@@ -90,6 +90,16 @@ pub struct PsdFile {
 impl PsdFile {
     /// Parses a PSD or PSB file.
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
+        Self::parse(data, true)
+    }
+
+    /// Parses structure without validating the saved composite. Pixel decoding
+    /// checks its size and ZIP checksum; useful for metadata or immediate decoding.
+    pub fn from_bytes_lazy(data: &[u8]) -> Result<Self> {
+        Self::parse(data, false)
+    }
+
+    fn parse(data: &[u8], validate_composite: bool) -> Result<Self> {
         let mut r = Reader::new(data);
         let header = Header::read(&mut r)?;
         let psb = header.version.is_psb();
@@ -129,7 +139,7 @@ impl PsdFile {
                 layer_mask_trailing = s.peek_rest().to_vec();
             }
         }
-        let image_data = ImageData::read(&mut r, &header)?;
+        let image_data = ImageData::read(&mut r, &header, validate_composite)?;
         Ok(PsdFile { header, color_mode_data, resources, layer_info, layer_info_placement, global_layer_mask, global_blocks, layer_mask_trailing, image_data })
     }
 

@@ -1,0 +1,9 @@
+/pkg
+/pkg-node
+/.venv
+__pycache__/
+bin/
+obj/
+
+.dart_tool/
+pubspec.lock

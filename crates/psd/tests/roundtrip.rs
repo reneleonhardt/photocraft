@@ -3,10 +3,18 @@
 use photocraft_psd::testgen::{self, MODES, mode_channels, mode_depths, pattern_plane};
 use photocraft_psd::*;
 
+#[test]
+fn document_and_builder_are_send_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<PsdFile>();
+    assert_send_sync::<PsdBuilder>();
+}
+
 fn assert_stable(file: &PsdFile, name: &str) {
     let bytes = file.to_bytes().unwrap_or_else(|e| panic!("{name}: write failed: {e}"));
     let parsed = PsdFile::from_bytes(&bytes).unwrap_or_else(|e| panic!("{name}: parse failed: {e}"));
     assert_eq!(&parsed, file, "{name}: model round trip");
+    assert_eq!(PsdFile::from_bytes_lazy(&bytes).unwrap(), parsed, "{name}: lazy parse");
     let again = parsed.to_bytes().unwrap();
     assert_eq!(again, bytes, "{name}: byte stability");
 }

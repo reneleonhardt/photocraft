@@ -1,0 +1,58 @@
+[package]
+name = "photocraft-psd-bindings"
+version = "0.3.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "C, Python and JavaScript bindings for PhotoCraft's lossless PSD/PSB reader and writer"
+repository = "https://github.com/storytold/photocraft"
+readme = "README.md"
+include = [
+    "/src/**", "/include/**", "/csharp/**", "/dart/**", "/go/**", "/go.mod", "/cmake/**",
+    "/examples/**", "/tests/**", "/Cargo.lock", "/pyproject.toml", "/package*.json",
+    "/tsconfig*.json", "/check*.sh", "/package-c.sh", "/README.md", "/LICENSE-*",
+    "!**/bin/**", "!**/obj/**", "!**/.dart_tool/**", "!**/pubspec.lock",
+]
+
+# Foreign-language glue stays outside the editor workspace's no-unsafe contract.
+[workspace]
+
+[lib]
+name = "photocraft_psd_bindings"
+crate-type = ["staticlib", "cdylib"]
+
+[features]
+default = []
+c = []
+python = ["dep:pyo3"]
+javascript = ["dep:wasm-bindgen", "dep:serde", "dep:tsify"]
+
+[dependencies]
+photocraft-psd = { path = "../../crates/psd" }
+photocraft-cms = { path = "../../crates/cms" }
+fast_image_resize = "6.1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pyo3 = { version = "0.29.3", features = ["abi3-py311", "abi3t-py315"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.129", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+tsify = { version = "0.5.8", default-features = false, features = ["js"], optional = true }
+
+[dev-dependencies]
+photocraft-psd = { path = "../../crates/psd", features = ["testgen"] }
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+panic = "unwind"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3"]

@@ -162,6 +162,7 @@ fn corrupt_zip_merged_rejected() {
     f.image_data.data[n / 2 + 1] ^= 0x55;
     let b = f.to_bytes().unwrap();
     assert!(PsdFile::from_bytes(&b).is_err());
+    assert!(PsdFile::from_bytes_lazy(&b).unwrap().decode_merged().is_err());
 }
 
 #[test]

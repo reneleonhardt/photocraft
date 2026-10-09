@@ -20,6 +20,7 @@ A standalone reader and writer for Adobe Photoshop **PSD** (version 1) and **PSB
 ```rust
 // Top level
 PsdFile::from_bytes(&[u8]) -> Result<PsdFile>
+PsdFile::from_bytes_lazy(&[u8]) -> Result<PsdFile> // defer composite validation until decoding
 PsdFile::to_bytes(&self) -> Result<Vec<u8>>
 PsdFile::open(path) / save(path)            // native only
 PsdFile { header, color_mode_data, resources, layer_info, layer_info_placement,
