@@ -251,3 +251,25 @@ See `examples/inspect.ts` for browser initialization and typed metadata. Include
 
 Decoding is synchronous. For large files, use `examples/worker.ts` with module workers. Compile to `worker/worker.js`, keep the generated web package in sibling `pkg/`, and serve both over HTTP. Send `{ bytes }` with `[bytes]` as the transfer list; the sender's buffer detaches. The worker transfers the preview back and permits retry after initialization failure.
 
+## Checks and distribution
+
+The native checks package the SDK and test shared/static C/C++ linking, CMake, pkg-config and Swift consumers. Run the remaining wrappers separately, using your host RID for C#:
+
+```sh
+PSD_BINDINGS_PYTHON="$PWD/.venv/bin/python" sh check.sh
+sh check-dotnet.sh osx-arm64
+sh check-go.sh
+sh check-dart.sh
+```
+
+`sh check.sh c` selects native checks; `sh check.sh javascript` selects WASM checks. Tests cover ownership, errors, ICC conversion, geometry, all supported compression/depth/version combinations, creation and inspect/create examples. Python checks shared reads; TypeScript checks generated types and workers; Go checks strict cgo pointers and races; Dart checks JIT, compiled consumers and isolate rejection. Windows native checks require Git Bash and the Visual Studio developer environment.
+
+After WASM checks, run `npx --no-install playwright install --only-shell chromium firefox webkit` and `npm run check:browser`. On Ubuntu, add `--with-deps` to the install command. One scenario checks HTTP loading, pixels surviving handle disposal and memory growth, malformed-input recovery and independent workers. CI runs Chromium on Windows, Firefox on Ubuntu and WebKit on macOS against the same WASM build. WebKit tests do not run released Safari.
+
+CI uses psd-tools to independently check all 24 PSD/PSB, 8/16/32-bit and compression combinations, plus inspect/create outputs from all seven interfaces and Python/WASM/C#/Go/Dart edit outputs. It compares literal samples, transparency, hierarchy, masks, geometry, ICC and resources. Run `python tests/check_psd.py target/fixture.psd target/fixtures/*.psd` after installing psd-tools.
+
+ImageMagick also checks decoded RGBA8 for all fixture layers and RAW/RLE composites; ZIP composites are unsupported by its reader. Add `--imagemagick magick` to enable these checks locally. Warnings and pixel mismatches fail the check.
+
+CI builds five native targets, three wheel families and portable WASM artifacts. It checks RustSec/npm advisories with read-only permissions, pinned actions, verified Binaryen downloads and trusted-main-only cache writes.
+
+Distribute the native SDK with the Go or Dart package, the NuGet package, wheels or the generated npm package for the chosen loader. The Rust package is internal (`publish = false`). `python -m maturin sdist --out target/sdist` bundles the PSD and CMS dependencies. Source archives include wrappers, examples and tests; runtime artifacts contain compiled libraries and loaders, with package documentation and licenses.

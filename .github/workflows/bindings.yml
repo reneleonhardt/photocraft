@@ -1,0 +1,359 @@
+name: PSD bindings
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bindings/**'
+      - 'crates/psd/**'
+      - 'crates/cms/**'
+      - 'Cargo.toml'
+      - 'rustfmt.toml'
+      - 'clippy.toml'
+      - '.github/workflows/bindings.yml'
+  pull_request:
+    paths:
+      - 'bindings/**'
+      - 'crates/psd/**'
+      - 'crates/cms/**'
+      - 'Cargo.toml'
+      - 'rustfmt.toml'
+      - 'clippy.toml'
+      - '.github/workflows/bindings.yml'
+  workflow_dispatch:
+
+env:
+  BINARYEN_VERSION: '133' # https://github.com/WebAssembly/binaryen/releases
+  CARGO_AUDIT_VERSION: '0.22.2' # https://github.com/rustsec/rustsec/releases
+  DOTNET_VERSION: '10.0.x' # https://github.com/dotnet/sdk/releases
+  GO_VERSION: '1.27.x' # https://go.dev/dl/
+  IMAGEMAGICK_VERSION: '7.1.2-33' # https://github.com/ImageMagick/ImageMagick/releases
+  NODE_VERSION: '26' # https://github.com/nodejs/node/releases
+  PSD_TOOLS_VERSION: '1.24.0' # https://github.com/psd-tools/psd-tools/releases
+  PYTHON_VERSION: '3.15.0' # https://github.com/actions/python-versions/releases
+  WASM_PACK_VERSION: '0.15.0' # https://github.com/wasm-bindgen/wasm-pack/releases
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: C / C++ / C# / Go / Dart (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - windows-latest
+          - windows-11-arm
+          - macos-26
+    defaults:
+      run:
+        shell: bash
+        working-directory: bindings/psd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          toolchain: ${{ matrix.os == 'windows-11-arm' && 'stable-aarch64-pc-windows-msvc' || 'stable' }}
+          components: clippy,rustfmt
+          rust-src-dir: bindings/psd
+          cache-save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: runner.os == 'Windows'
+        with:
+          arch: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - run: PSD_BINDINGS_PYTHON=python sh check.sh c
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - name: Test C# package
+        run: |
+          case "$RUNNER_OS" in Linux) os=linux ;; Windows) os=win ;; macOS) os=osx ;; *) exit 1 ;; esac
+          case "$RUNNER_ARCH" in ARM64) arch=arm64 ;; X64) arch=x64 ;; *) exit 1 ;; esac
+          PSD_BINDINGS_PYTHON=python sh check-dotnet.sh "$os-$arch"
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - run: sh check-dart.sh
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: false
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        if: runner.os == 'Windows'
+        with:
+          msystem: ${{ runner.arch == 'ARM64' && 'CLANGARM64' || 'CLANG64' }}
+          path-type: inherit
+          cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          install: ${{ runner.arch == 'ARM64' && 'mingw-w64-clang-aarch64-clang' || 'mingw-w64-clang-x86_64-clang' }}
+      - name: Test Go package (Unix)
+        if: runner.os != 'Windows'
+        run: sh check-go.sh
+      - name: Test Go package (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: sh check-go.sh
+      - name: Independently check native outputs
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python -m pip install --only-binary=:all: "psd-tools==$PSD_TOOLS_VERSION"
+          python tests/check_psd.py target/{c,cpp,csharp,go,dart}.psd target/created-{c,cpp,csharp,go,dart}.psd target/edited-{csharp,go,dart}.psd
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c-${{ matrix.os }}
+          retention-days: 7
+          if-no-files-found: error
+          path: bindings/psd/target/native-sdk/
+
+  nuget:
+    name: NuGet package
+    needs: native
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bindings/psd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: c-*
+          path: bindings/psd/target/native-artifacts
+      - name: Pack native libraries
+        run: |
+          for spec in \
+            'ubuntu-latest linux-x64 libphotocraft_psd_bindings.so' \
+            'ubuntu-24.04-arm linux-arm64 libphotocraft_psd_bindings.so' \
+            'windows-latest win-x64 photocraft_psd_bindings.dll' \
+            'windows-11-arm win-arm64 photocraft_psd_bindings.dll' \
+            'macos-26 osx-arm64 libphotocraft_psd_bindings.dylib'; do
+            read -r host rid library <<< "$spec"
+            mkdir -p "target/dotnet-native/$rid/native"
+            case "$rid" in win-*) directory=bin ;; *) directory=lib ;; esac
+            cp "target/native-artifacts/c-$host/$directory/$library" "target/dotnet-native/$rid/native/"
+          done
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          DOTNET_GENERATE_ASPNET_CERTIFICATE=false DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+            dotnet pack csharp/PhotoCraft.Psd.csproj -c Release --artifacts-path "$PWD/target/dotnet" \
+            -p:PsdVersion="$version" -p:NativeRoot="$PWD/target/dotnet-native" -o target/nuget
+          python3 tests/nuget.py "target/nuget/PhotoCraft.Psd.$version.nupkg" linux-x64 linux-arm64 win-x64 win-arm64 osx-arm64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nuget
+          retention-days: 7
+          if-no-files-found: error
+          path: bindings/psd/target/nuget/*.nupkg
+
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: bindings/psd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          components: clippy
+          rust-src-dir: bindings/psd
+          cache-save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+      - name: Audit Rust dependencies
+        run: |
+          cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+          cargo audit --file Cargo.lock --deny warnings
+      - name: Install verified Binaryen
+        run: |
+          mkdir -p target/binaryen
+          curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" -o target/binaryen.tar.gz
+          printf '%s  %s\n' 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 target/binaryen.tar.gz | shasum -a 256 -c -
+          tar -xzf target/binaryen.tar.gz --strip-components=1 -C target/binaryen
+          echo "$PWD/target/binaryen/bin" >> "$GITHUB_PATH"
+      - run: PSD_BINDINGS_PYTHON=python sh check.sh javascript
+      - name: Install verified ImageMagick
+        run: |
+          mkdir -p target/imagemagick
+          curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/ImageMagick/ImageMagick/releases/download/${IMAGEMAGICK_VERSION}/ImageMagick-${IMAGEMAGICK_VERSION}-gcc-x86_64.AppImage" -o target/imagemagick/image.AppImage
+          printf '%s  %s\n' af598b07ab4dd8b8123623602dc9fc69d5e32185a36fd3739795a0deb02c1fb7 target/imagemagick/image.AppImage | shasum -a 256 -c -
+          chmod +x target/imagemagick/image.AppImage
+          (cd target/imagemagick && ./image.AppImage --appimage-extract > /dev/null)
+      - name: Independently check generated fixtures and WASM outputs
+        run: |
+          python -m pip install --only-binary=:all: "psd-tools==$PSD_TOOLS_VERSION"
+          python tests/check_psd.py --imagemagick target/imagemagick/squashfs-root/AppRun target/fixture.psd target/fixtures/*.psd target/javascript.psd target/created-javascript.psd target/edited-javascript.psd
+      - name: Test Firefox
+        run: |
+          npx --no-install playwright install --with-deps firefox
+          npm run check:browser -- --project=firefox
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: psd-binding-fixtures
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            bindings/psd/target/fixture.psd
+            bindings/psd/target/fixtures/*.psd
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            bindings/psd/pkg/
+            bindings/psd/pkg-node/
+
+  browsers:
+    name: Browser (${{ matrix.os }})
+    needs: wasm
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: bindings/psd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wasm
+          path: bindings/psd
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: psd-binding-fixtures
+          path: bindings/psd/target
+      - name: Test browser
+        run: |
+          case "$RUNNER_OS" in Windows) browser=chromium ;; macOS) browser=webkit ;; *) exit 1 ;; esac
+          npm ci --ignore-scripts
+          npx --no-install tsc --project tsconfig.worker.json --noEmit false --outDir target/worker
+          npx --no-install playwright install --only-shell "$browser"
+          npm run check:browser -- --project="$browser"
+
+  wheels:
+    name: Wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - windows-latest
+          - windows-11-arm
+          - macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        if: runner.os != 'Linux'
+        with:
+          toolchain: ${{ matrix.os == 'windows-11-arm' && 'stable-aarch64-pc-windows-msvc' || 'stable' }}
+          rust-src-dir: bindings/psd
+          cache-save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - uses: pypa/cibuildwheel@b3395e271a35f73dad77f21802abe9b986dfe299 # v4.3.1
+        with:
+          package-dir: bindings/psd
+          output-dir: bindings/psd/target/wheels-release
+          extras: uv
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.os }}
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+          path: bindings/psd/target/wheels-release/*.whl
+
+  wheel-consumers:
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    needs: [wasm, wheels]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - windows-latest
+          - windows-11-arm
+          - macos-26
+        python: ['3.11', '3.12', '3.13', '3.14', '3.15', '3.14t', '3.15t']
+    defaults:
+      run:
+        working-directory: bindings/psd
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheels-${{ matrix.os }}
+          path: bindings/psd/target/wheels-release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: psd-binding-fixtures
+          path: bindings/psd/target
+      - name: Test wheels
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python tests/wheel_tags.py target/wheels-release
+          python -m pip install --no-index --find-links target/wheels-release --no-deps photocraft-psd
+          python tests/python.py target/fixture.psd
+          python examples/inspect.py target/fixture.psd target/python.psd
+          python examples/create.py target/created-python.psd
+      - name: Independently check Python outputs
+        if: matrix.os == 'ubuntu-latest' && startsWith(env.PYTHON_VERSION, matrix.python)
+        run: |
+          python -m pip install --only-binary=:all: "psd-tools==$PSD_TOOLS_VERSION"
+          python tests/check_psd.py target/python.psd target/created-python.psd target/edited-python.psd
