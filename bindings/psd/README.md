@@ -36,3 +36,42 @@ Builders use a 1 GiB input budget with per-item overhead, at most 32,767 layer r
 
 Creation examples cover C, C++, C#, Go, Python and JavaScript under `examples/`, and Dart under `dart/example/`.
 
+## C
+
+```sh
+cargo build --release --features c --locked --target-dir target/c
+cc -std=c11 -Wall -Wextra -Werror -Iinclude examples/inspect.c \
+  -Ltarget/c/release -lphotocraft_psd_bindings -Wl,-rpath,"$PWD/target/c/release" -o target/inspect-c
+target/inspect-c input.psd output.psd
+```
+
+Ship `include/photocraft_psd.h` and the platform's `libphotocraft_psd_bindings.so`, `.dylib`, or `photocraft_psd_bindings.dll` with its Windows import library. The command above targets Linux/macOS. The separate target directory prevents Python builds from overwriting the C library.
+
+On Windows, use a Visual Studio developer shell for the target architecture:
+
+```bat
+cargo build --release --features c --locked --target-dir target/c
+cl /nologo /std:c11 /D_CRT_SECURE_NO_WARNINGS /Iinclude examples/inspect.c target/c/release/photocraft_psd_bindings.dll.lib /Fetarget/inspect-c.exe /Fotarget/inspect-c.obj
+copy target\c\release\photocraft_psd_bindings.dll target\
+target\inspect-c.exe input.psd output.psd
+```
+
+For static linking, obtain native flags with `cargo rustc --release --features c --locked --target-dir target/c -- --print native-static-libs`.
+
+Follow the header's pointer contract. Fallible calls return a status, reset valid outputs on failure, and optionally fill a UTF-8 error buffer. Free documents with `pc_psd_free`, byte buffers with `pc_psd_buffer_free`, trees with `pc_psd_tree_free`, and builder/path/slice handles with their matching `*_free` function. Release storage before reusing an output; use these functions for Rust allocations. Read-only calls can share a live document with separate outputs.
+
+Fallible calls catch Rust panics. Dangling pointers, insufficient storage, and allocation failure remain outside that guarantee.
+
+`pc_psd_merged_pixels_f32` and `pc_psd_layer_pixels_f32` return packed source-space colour plus straight alpha. RGB composites are unmatted; CMYK becomes ink amounts; bitmap/indexed pixels expand to Gray/RGB. Values retain finite HDR range without ICC conversion, clipping or tone mapping. Lab uses normalized PSD encoding as documented in the header. Integer composite matte quantization cannot be recovered. Extra composite channels are omitted; native decoding retains them. No layer opacity, fill opacity, masks, effects or blending is applied. Duotone/multichannel are unsupported. Nonfinite colours and invalid alpha return errors. Output is capped at 1 GiB, excluding decoding memory.
+
+```c
+pc_psd_float_image pixels = {0};
+if (pc_psd_merged_pixels_f32(doc, &pixels, &error) == PC_PSD_OK) {
+    /* Rows contain width * channels floats; the last channel is alpha. */
+    process_pixels(pixels.data.data, pixels.width, pixels.height, pixels.channels, pixels.color_mode);
+}
+pc_psd_float_buffer_free(&pixels.data);
+```
+
+The float buffer owns its storage independently of the document; `len` counts floats. Use the embedded ICC profile with the source colour mode when converting to a working space.
+

@@ -15,3 +15,6 @@ pub use document::{Document, Header, LayerInfo};
 pub use geometry::{Path, Slices};
 pub use metadata::*;
 pub use pixels::FloatImage;
+
+#[cfg(all(feature = "c", not(target_arch = "wasm32")))]
+pub mod c;
